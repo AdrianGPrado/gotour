@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 type Fetcher interface {
@@ -13,6 +14,7 @@ type Fetcher interface {
 // Fetched store fetched urls to prevent double fetching.
 type Fetched struct {
 	urls map[string]bool
+	mux  sync.Mutex
 }
 
 func (f Fetched) hasURL(url string) bool {
@@ -23,6 +25,8 @@ func (f Fetched) hasURL(url string) bool {
 }
 
 func (f *Fetched) addURL(url string) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
 	f.urls[url] = true
 }
 
