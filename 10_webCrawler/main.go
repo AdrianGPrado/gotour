@@ -52,27 +52,27 @@ func (f *Fetched) printURLs() {
 
 var fetched = Fetched{urls: make(map[string]bool), counter: 1}
 
-// Link keep together a url and it's depth in the graph
-type Link struct {
-	url   string
+// URL keep together a url and it's depth in the graph
+type URL struct {
+	link  string
 	depth int
 }
 
-func crawler(l Link, fetcher Fetcher, links chan Link) {
+func crawler(url URL, fetcher Fetcher, c chan URL) {
 	fetched.subtractCounter()
-	fmt.Printf("processing %v, counter %v\n", l, fetched.counter)
-	_, urls, err := fetcher.Fetch(l.url)
+	fmt.Printf("processing %v, counter %v\n", url, fetched.counter)
+	_, urls, err := fetcher.Fetch(url.link)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fetched.addURL(l.url)
-	if fetched.counter == 0 && l.depth == 2 {
-		fmt.Printf("exit conditions : %v depth: %v \n", fetched.counter, l.depth)
-		close(links)
+	fetched.addURL(url.link)
+	if fetched.counter == 0 && url.depth == 2 {
+		fmt.Printf("exit conditions : %v depth: %v \n", fetched.counter, url.depth)
+		close(c)
 	} else {
 		for _, u := range urls {
-			links <- Link{u, l.depth + 1}
+			c <- URL{u, url.depth + 1}
 		}
 	}
 }
@@ -84,16 +84,16 @@ func Crawl(url string, depth int, fetcher Fetcher) {
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
 
-	links := make(chan Link)
+	urls := make(chan URL)
 	// done := make(chan string)
 
-	go crawler(Link{url: url, depth: 0}, fetcher, links)
+	go crawler(URL{link: url, depth: 0}, fetcher, urls)
 
-	for link := range links {
-		fmt.Printf("received %v, counter %v\n", link, fetched.counter)
-		if !fetched.hasURL(link.url) && link.depth < depth {
+	for url := range urls {
+		fmt.Printf("received %v, counter %v\n", url, fetched.counter)
+		if !fetched.hasURL(url.link) && url.depth <= depth {
 			fetched.addCounter()
-			go crawler(link, fetcher, links)
+			go crawler(url, fetcher, urls)
 		}
 	}
 	// fetched.printURLs()
