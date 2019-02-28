@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// Fetcher something
 type Fetcher interface {
 	// Fetch returns the body of URL and
 	// a slice of URLs found on that page.
@@ -13,11 +14,12 @@ type Fetcher interface {
 
 // Fetched store fetched urls to prevent double fetching.
 type Fetched struct {
-	urls map[string]bool
-	mux  sync.Mutex
+	counter int
+	urls    map[string]bool
+	mux     sync.Mutex
 }
 
-func (f Fetched) hasURL(url string) bool {
+func (f *Fetched) hasURL(url string) bool {
 	if has, ok := f.urls[url]; ok {
 		return has
 	}
@@ -30,7 +32,50 @@ func (f *Fetched) addURL(url string) {
 	f.urls[url] = true
 }
 
-var fetched = Fetched{urls: make(map[string]bool)}
+func (f *Fetched) addCounter() {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	f.counter++
+}
+
+func (f *Fetched) subtractCounter() {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	f.counter--
+}
+func (f *Fetched) printURLs() {
+	fmt.Printf("urls proccessed:\n")
+	for i, u := range f.urls {
+		fmt.Printf("%v %v\n", i, u)
+	}
+}
+
+var fetched = Fetched{urls: make(map[string]bool), counter: 1}
+
+// Link keep together a url and it's depth in the graph
+type Link struct {
+	url   string
+	depth int
+}
+
+func crawler(l Link, fetcher Fetcher, links chan Link) {
+	fetched.subtractCounter()
+	fmt.Printf("processing %v, counter %v\n", l, fetched.counter)
+	_, urls, err := fetcher.Fetch(l.url)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fetched.addURL(l.url)
+	if fetched.counter == 0 && l.depth == 2 {
+		fmt.Printf("exit conditions : %v depth: %v \n", fetched.counter, l.depth)
+		close(links)
+	} else {
+		for _, u := range urls {
+			links <- Link{u, l.depth + 1}
+		}
+	}
+}
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
@@ -38,24 +83,20 @@ func Crawl(url string, depth int, fetcher Fetcher) {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
-	if depth <= 0 {
-		return
-	}
-	body, urls, err := fetcher.Fetch(url)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("1 found: %s %q\n", url, body)
-	fetched.addURL(url)
-	fmt.Printf("2 add entry: %s, %v \n", url, fetched.hasURL(url))
-	for _, u := range urls {
-		fmt.Printf("3 crawl entry %s, fetched %v \n", u, fetched.hasURL(u))
-		if !fetched.hasURL(u) {
-			Crawl(u, depth-1, fetcher)
+
+	links := make(chan Link)
+	// done := make(chan string)
+
+	go crawler(Link{url: url, depth: 0}, fetcher, links)
+
+	for link := range links {
+		fmt.Printf("received %v, counter %v\n", link, fetched.counter)
+		if !fetched.hasURL(link.url) && link.depth < depth {
+			fetched.addCounter()
+			go crawler(link, fetcher, links)
 		}
 	}
-	return
+	// fetched.printURLs()
 }
 
 func main() {
